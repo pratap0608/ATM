@@ -1,0 +1,261 @@
+#include <iostream>
+#include <vector>
+#include <ctime>
+#include <iomanip>
+#include <termios.h> // For password hiding
+#include <unistd.h>
+using namespace std;
+
+// Function to hide PIN input
+string getHiddenInput() {
+    termios oldt;
+    tcgetattr(STDIN_FILENO, &oldt);
+    termios newt = oldt;
+    newt.c_lflag &= ~ECHO;
+    tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+
+    string input;
+    cin >> input;
+
+    tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+    return input;
+}
+
+// Function to check if a PIN is strong (at least 4 digits)
+bool isStrongPin(string pin) {
+    return pin.length() >= 4;
+}
+
+// Class representing a Bank Account
+class BankAccount {
+private:
+    string name;
+    string pin;
+    double balance;
+    vector<string> transactionHistory; // Stores transaction history
+    bool isLocked; // Tracks if the account is locked
+    double dailyWithdrawalLimit; // Daily withdrawal limit
+    double withdrawnToday; // Tracks withdrawals for the day
+    double minBalance; // Minimum balance required
+
+public:
+    BankAccount(string nm, string accPin, double initialBalance, double dailyLimit = 50000.0, double minBal = 1000.0) {
+        name = nm;
+        pin = accPin;
+        balance = initialBalance;
+        isLocked = false;
+        dailyWithdrawalLimit = dailyLimit;
+        withdrawnToday = 0.0;
+        minBalance = minBal;
+    }
+
+    // Function to authenticate user with PIN
+    bool authenticate(string enteredPin) {
+        if (isLocked) {
+            cout << "Account is locked. Please contact the bank." << endl;
+            return false;
+        }
+        return (pin == enteredPin);
+    }
+
+    // Getter functions to retrieve account details
+    string getName() {
+        return name;
+    }
+
+    string getPin() {
+        return pin;
+    }
+
+    double getBalance() {
+        return balance;
+    }
+
+    bool getIsLocked() {
+        return isLocked;
+    }
+
+    double getRemainingDailyLimit() {
+        return dailyWithdrawalLimit - withdrawnToday;
+    }
+
+    // Function to deposit money into the account
+    void deposit(double amount) {
+        if (amount <= 0) {
+            cout << "Invalid amount. Deposit failed." << endl;
+            return;
+        }
+        balance += amount;
+        addTransaction("Deposit: +rs" + to_string(amount));
+        cout << "Deposit successful. New balance: rs" << fixed << setprecision(2) << balance << endl;
+    }
+
+    // Function to withdraw money from the account
+    bool withdraw(double amount) {
+        if (amount <= 0) {
+            cout << "Invalid amount. Withdrawal failed." << endl;
+            return false;
+        }
+        if (balance - amount < minBalance) {
+            cout << "Withdrawal failed. Minimum balance requirement not met." << endl;
+            return false;
+        }
+        if (withdrawnToday + amount > dailyWithdrawalLimit) {
+            cout << "Withdrawal failed. Exceeds daily withdrawal limit." << endl;
+            return false;
+        }
+        if (balance >= amount) {
+            balance -= amount;
+            withdrawnToday += amount;
+            addTransaction("Withdrawal: -rs" + to_string(amount));
+            cout << "Withdrawal successful. New balance: rs" << fixed << setprecision(2) << balance << endl;
+            return true;
+        } else {
+            cout << "Insufficient balance. Withdrawal failed." << endl;
+            return false;
+        }
+    }
+
+    // Function to change the PIN of the account
+    void changePin(string newPin) {
+        if (!isStrongPin(newPin)) {
+            cout << "PIN must be at least 4 digits. Change failed." << endl;
+            return;
+        }
+        pin = newPin;
+        addTransaction("PIN changed");
+        cout << "PIN change successful." << endl;
+    }
+
+    // Function to lock the account
+    void lockAccount() {
+        isLocked = true;
+        cout << "Account locked due to too many failed attempts. Contact the bank." << endl;
+    }
+
+    // Function to add a transaction to the history
+    void addTransaction(string transaction) {
+        time_t now = time(0);
+        string dt = ctime(&now);
+        dt.pop_back(); // Remove newline character
+        transactionHistory.push_back(dt + " - " + transaction);
+    }
+
+    // Function to display transaction history
+    void displayTransactionHistory() {
+        cout << "\n*** Transaction History ***" << endl;
+        for (const auto& transaction : transactionHistory) {
+            cout << transaction << endl;
+        }
+    }
+};
+
+int main() {
+    // Creating multiple bank accounts
+    vector<BankAccount> accounts = {
+        BankAccount("Devang", "1111", 1000.0),
+        BankAccount("Pratap", "2222", 5000.0),
+        BankAccount("Vinay", "3333", 3000.0)
+    };
+
+    // Constants for authentication attempts and number of accounts
+    const int MAX_ATTEMPTS = 3;
+    int attemptsRemaining = MAX_ATTEMPTS;
+    string enteredPin;
+    bool authenticated = false;
+    int accountIndex = -1;
+
+    // User authentication process
+    while (attemptsRemaining > 0 && !authenticated) {
+        cout << "Enter PIN: ";
+        enteredPin = getHiddenInput();
+
+        // Checking PIN against all accounts
+        for (int i = 0; i < accounts.size(); i++) {
+            if (accounts[i].authenticate(enteredPin)) {
+                authenticated = true;
+                accountIndex = i;
+                cout << "\nWelcome, " << accounts[accountIndex].getName() << "." << endl << endl;
+                break;
+            }
+        }
+
+        if (!authenticated) {
+            attemptsRemaining--;
+            cout << "Invalid PIN. Attempts remaining: " << attemptsRemaining << endl;
+            if (attemptsRemaining == 0) {
+                for (auto& account : accounts) {
+                    if (account.getPin() == enteredPin) {
+                        account.lockAccount();
+                    }
+                }
+                cout << "Too many failed attempts. Exiting..." << endl;
+                return 0;
+            }
+        }
+    }
+
+    // ATM operations menu
+    int option;
+    do {
+        cout << "\n*** Menu ***" << endl;
+        cout << "1. Check Balance" << endl;
+        cout << "2. Deposit" << endl;
+        cout << "3. Withdraw" << endl;
+        cout << "4. Change PIN" << endl;
+        cout << "5. View Transaction History" << endl;
+        cout << "6. Exit" << endl;
+        cout << "Enter option: ";
+        cin >> option;
+
+        // Handling user-selected operations
+        switch (option) {
+            case 1:
+                cout << "Your account balance: rs" << fixed << setprecision(2) << accounts[accountIndex].getBalance() << endl;
+                break;
+
+            case 2: {
+                double amount;
+                cout << "Enter deposit amount: rs";
+                cin >> amount;
+                accounts[accountIndex].deposit(amount);
+                break;
+            }
+
+            case 3: {
+                double amount;
+                cout << "Enter withdrawal amount: rs";
+                cin >> amount;
+                accounts[accountIndex].withdraw(amount);
+                break;
+            }
+
+            case 4: {
+                cout << "Enter old PIN: ";
+                string oldPIN = getHiddenInput();
+                if (oldPIN != accounts[accountIndex].getPin()) {
+                    cout << "Invalid PIN. Please try again." << endl;
+                } else {
+                    cout << "Enter new PIN: ";
+                    string newPIN = getHiddenInput();
+                    accounts[accountIndex].changePin(newPIN);
+                }
+                break;
+            }
+
+            case 5:
+                accounts[accountIndex].displayTransactionHistory();
+                break;
+
+            case 6:
+                cout << "Thank you for using the ATM." << endl;
+                break;
+
+            default:
+                cout << "Invalid option. Please try again." << endl;
+                break;
+        }
+    } while (option != 6);
+
+    return 0;
+}
